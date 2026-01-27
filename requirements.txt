@@ -1,0 +1,14 @@
+docling
+langchain>=0.0.208
+langgraph>=0.0.1
+openai>=0.27.0
+pydantic>=1.10.7
+ipykernel>=6.15.2
+langchain-openai>=0.0.10
+langchain-google-genai
+langchain_community>=0.0.6
+python-dotenv
+psycopg2-binary
+sqlalchemy>=2.0
+pinecone>=0.1.0
+mistralai
