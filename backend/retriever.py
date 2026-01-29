@@ -1,12 +1,12 @@
 import os
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from database_setup import init_postgres, DocumentFragment, ImageData, TableData
 from vectorstore import init_pinecone
 from sqlalchemy.orm import sessionmaker
 
 def retrieve_hybrid_context(query, arxiv_id):
     # 1. Initialize
-    embeddings_model = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+    embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
     index = init_pinecone()
     engine = init_postgres()
     Session = sessionmaker(bind=engine)

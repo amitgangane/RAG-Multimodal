@@ -12,7 +12,7 @@ def init_pinecone():
     if INDEX_NAME not in pc.list_indexes().names():
         pc.create_index(
             name=INDEX_NAME,
-            dimension=768,  # Google text-embedding-004 outputs 768 dimensions
+            dimension=1536,  # OpenAI text-embedding-3-small outputs 1536 dimensions
             metric="cosine",
             spec=ServerlessSpec(
                 cloud="aws",

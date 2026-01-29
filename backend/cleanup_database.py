@@ -71,7 +71,25 @@ def cleanup_database():
         print(f"   Tables remaining: {remaining_tables}")
         
         session.close()
-        
+
+        # 5. Clean up Pinecone index
+        print("\n5. Cleaning up Pinecone index...")
+        try:
+            from pinecone import Pinecone
+            PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+            INDEX_NAME = "sagemind-research-index"
+
+            pc = Pinecone(api_key=PINECONE_API_KEY)
+
+            if INDEX_NAME in pc.list_indexes().names():
+                print(f"   Deleting Pinecone index '{INDEX_NAME}'...")
+                pc.delete_index(INDEX_NAME)
+                print(f"   ✅ Pinecone index deleted")
+            else:
+                print(f"   ℹ️  Pinecone index '{INDEX_NAME}' does not exist")
+        except Exception as e:
+            print(f"   ⚠️  Could not clean Pinecone: {e}")
+
         if remaining_papers == 0:
             print("\n" + "=" * 80)
             print("✅ DATABASE CLEANUP COMPLETE!")

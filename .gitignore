@@ -87,3 +87,8 @@ yarn-error.log
 *.iml
 .gradle
 .m2/
+
+# Files with sensitive content
+progress.md
+CLAUDE.md
+COMPLETION_SUMMARY.md

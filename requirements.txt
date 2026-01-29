@@ -12,3 +12,7 @@ psycopg2-binary
 sqlalchemy>=2.0
 pinecone>=0.1.0
 mistralai
+fastapi
+uvicorn
+python-multipart
+langsmith>=0.1.0

@@ -2,7 +2,7 @@ from typing import Annotated, TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langchain_core.messages import BaseMessage, HumanMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from retriever import retrieve_hybrid_context
 import json
 
@@ -59,7 +59,7 @@ def format_context_for_llm(context: Dict[str, Any]) -> str:
 
 def generate_node(state: AgentState):
     """Generates a comprehensive answer using retrieved context and message history."""
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro")  # Using gemini-1.5-pro
+    llm = ChatOpenAI(model="gpt-4o-mini")  # Using cost-effective OpenAI model
     
     # Format the retrieved context
     formatted_context = format_context_for_llm(state["context"])
