@@ -1,16 +1,47 @@
 import os
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
-# Reusable LLM instance
-_llm = None
+MAX_RETRIES = 6
+MIN_WAIT = 2.0  # minimum seconds to wait on rate limit
 
-def get_llm():
-    """Get or create LLM instance."""
-    global _llm
-    if _llm is None:
-        _llm = ChatOpenAI(model="gpt-4o-mini")
-    return _llm
+
+def _create_llm():
+    """Create a new ChatOpenAI instance (thread-safe: one per thread)."""
+    return ChatOpenAI(model="gpt-4o-mini")
+
+
+def _parse_retry_after(error_str):
+    """Extract wait time in seconds from OpenAI rate limit error message."""
+    match = re.search(r"try again in (\d+(?:\.\d+)?)\s*(ms|s)", error_str, re.IGNORECASE)
+    if match:
+        val = float(match.group(1))
+        if match.group(2).lower() == "ms":
+            val /= 1000
+        return val
+    return None
+
+
+def _retry_on_rate_limit(fn, max_retries=MAX_RETRIES):
+    """Call fn(), retrying on 429 RateLimitError with exponential backoff."""
+    for attempt in range(max_retries + 1):
+        try:
+            return fn()
+        except Exception as e:
+            if "429" in str(e) or "rate_limit" in str(e).lower():
+                if attempt == max_retries:
+                    raise
+                # Use parsed wait time or exponential backoff, whichever is larger
+                parsed = _parse_retry_after(str(e))
+                backoff = MIN_WAIT * (2 ** attempt)
+                wait = max(parsed + 0.5, backoff) if parsed else backoff
+                print(f"   Rate limited (attempt {attempt + 1}/{max_retries}), waiting {wait:.1f}s...")
+                time.sleep(wait)
+            else:
+                raise
 
 
 def summarize_image(image_base64: str, page_num: int, surrounding_text: str = "") -> str:
@@ -25,8 +56,7 @@ def summarize_image(image_base64: str, page_num: int, surrounding_text: str = ""
     Returns:
         Generated description of the image
     """
-    # Use GPT-4o-mini for vision (faster and cheaper)
-    vision_llm = ChatOpenAI(model="gpt-4o-mini")
+    vision_llm = _create_llm()
 
     # Clean up base64 string - remove data URL prefix if present
     if image_base64.startswith("data:"):
@@ -58,11 +88,10 @@ Provide a concise description (2-3 sentences) that:
     ])
 
     try:
-        response = vision_llm.invoke([message])
-        print(f"   ✅ Image description generated successfully")
+        response = _retry_on_rate_limit(lambda: vision_llm.invoke([message]))
         return response.content
     except Exception as e:
-        print(f"   ❌ Image description failed: {type(e).__name__}: {e}")
+        print(f"   Image description failed: {type(e).__name__}: {e}")
         return f"Figure on page {page_num}"
 
 
@@ -78,7 +107,7 @@ def summarize_table(table_content: str, page_num: int, surrounding_text: str = "
     Returns:
         Generated description of the table
     """
-    llm = get_llm()
+    llm = _create_llm()
 
     # Build prompt with context if available
     if surrounding_text:
@@ -106,11 +135,91 @@ Provide a concise description (2-3 sentences) that:
 3. Highlights any notable patterns or key values"""
 
     try:
-        response = llm.invoke([HumanMessage(content=prompt)])
+        response = _retry_on_rate_limit(lambda: llm.invoke([HumanMessage(content=prompt)]))
         return response.content
     except Exception as e:
-        print(f"   ⚠️  Table description failed: {e}")
+        print(f"   Table description failed: {e}")
         return f"Table on page {page_num}"
+
+
+def batch_summarize_images(image_items, max_workers=2):
+    """
+    Generate descriptions for multiple images in parallel using ThreadPoolExecutor.
+
+    Args:
+        image_items: List of (image_base64, page_num, surrounding_text) tuples
+        max_workers: Max concurrent API calls (default=5 to respect rate limits)
+
+    Returns:
+        List of description strings in the same order as image_items
+    """
+    if not image_items:
+        return []
+
+    results = [None] * len(image_items)
+    start_time = time.time()
+    print(f"   Starting parallel image enrichment: {len(image_items)} images, {max_workers} workers")
+
+    def _process_image(idx, item):
+        image_base64, page_num, context = item
+        desc = summarize_image(image_base64, page_num, context)
+        return idx, desc
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_process_image, i, item): i
+            for i, item in enumerate(image_items)
+        }
+        completed = 0
+        for future in as_completed(futures):
+            idx, desc = future.result()
+            results[idx] = desc
+            completed += 1
+            print(f"   Image {completed}/{len(image_items)} done (index {idx})")
+
+    elapsed = time.time() - start_time
+    print(f"   Parallel image enrichment complete: {len(image_items)} images in {elapsed:.1f}s")
+    return results
+
+
+def batch_summarize_tables(table_items, max_workers=3):
+    """
+    Generate descriptions for multiple tables in parallel using ThreadPoolExecutor.
+
+    Args:
+        table_items: List of (table_content, page_num, surrounding_text) tuples
+        max_workers: Max concurrent API calls (default=5 to respect rate limits)
+
+    Returns:
+        List of description strings in the same order as table_items
+    """
+    if not table_items:
+        return []
+
+    results = [None] * len(table_items)
+    start_time = time.time()
+    print(f"   Starting parallel table enrichment: {len(table_items)} tables, {max_workers} workers")
+
+    def _process_table(idx, item):
+        table_content, page_num, context = item
+        desc = summarize_table(table_content, page_num, context)
+        return idx, desc
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_process_table, i, item): i
+            for i, item in enumerate(table_items)
+        }
+        completed = 0
+        for future in as_completed(futures):
+            idx, desc = future.result()
+            results[idx] = desc
+            completed += 1
+            print(f"   Table {completed}/{len(table_items)} done (index {idx})")
+
+    elapsed = time.time() - start_time
+    print(f"   Parallel table enrichment complete: {len(table_items)} tables in {elapsed:.1f}s")
+    return results
 
 
 # Legacy function for backwards compatibility

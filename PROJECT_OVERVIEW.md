@@ -238,7 +238,7 @@ LANGCHAIN_PROJECT=rag-multimodal
 - [ ] Add user authentication
 
 ### Performance
-- [ ] Parallel image processing during ingestion
+- [x] Parallel image/table processing during ingestion (ThreadPoolExecutor + retry logic)
 - [ ] Caching for repeated queries
 - [ ] Batch embedding generation
 
